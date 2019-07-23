@@ -338,10 +338,6 @@ func (s *Server) Shutdown() error {
 	s.StopHTTPServer()
 	s.WaitForGoroutines()
 
-	if s.Store != nil {
-		s.Store.Close()
-	}
-
 	if s.htmlTemplateWatcher != nil {
 		s.htmlTemplateWatcher.Close()
 	}
@@ -362,6 +358,10 @@ func (s *Server) Shutdown() error {
 	if s.Jobs != nil && s.runjobs {
 		s.Jobs.StopWorkers()
 		s.Jobs.StopSchedulers()
+	}
+
+	if s.Store != nil {
+		s.Store.Close()
 	}
 
 	mlog.Info("Server stopped")
