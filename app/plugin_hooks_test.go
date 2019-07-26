@@ -497,6 +497,7 @@ func TestHookFileWillBeUploaded(t *testing.T) {
 			package main
 
 			import (
+				"fmt"
 				"io"
 				"github.com/mattermost/mattermost-server/plugin"
 				"github.com/mattermost/mattermost-server/model"
@@ -507,7 +508,10 @@ func TestHookFileWillBeUploaded(t *testing.T) {
 			}
 
 			func (p *MyPlugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string) {
-				output.Write([]byte("ignored"))
+				n, err := output.Write([]byte("ignored"))
+				if err != nil {
+					return info, fmt.Sprintf("FAILED to write output file n: %v, err: %v", n, err)
+				}
 				info.Name = "ignored"
 				return info, "rejected"
 			}
@@ -608,6 +612,7 @@ func TestHookFileWillBeUploaded(t *testing.T) {
 				"io"
 				"fmt"
 				"bytes"
+				"fmt"
 				"github.com/mattermost/mattermost-server/plugin"
 				"github.com/mattermost/mattermost-server/model"
 			)
@@ -617,18 +622,16 @@ func TestHookFileWillBeUploaded(t *testing.T) {
 			}
 
 			func (p *MyPlugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string) {
-				p.API.LogDebug(info.Name)
 				var buf bytes.Buffer
-				buf.ReadFrom(file)
-				p.API.LogDebug(buf.String())
+				n, err := buf.ReadFrom(file)
+				if err != nil {
+					return info, fmt.Sprintf("FAILED to read input file n: %v, err: %v", n, err)
+				}
 
 				outbuf := bytes.NewBufferString("changedtext")
-				n, err := io.Copy(output, outbuf)
-				if err != nil {
-					panic(fmt.Sprintf("io.Copy failed after %d bytes: %s", n, err.Error()))
-				}
-				if n != 11 {
-					panic(fmt.Sprintf("io.Copy only copied %d bytes", n))
+				n, err = io.Copy(output, outbuf)
+				if int(n) != len("changedtext") || err != nil {
+					return info, fmt.Sprintf("FAILED to write output file n: %v, err: %v", n, err)
 				}
 				info.Name = "modifiedinfo"
 				return info, ""
