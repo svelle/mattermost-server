@@ -2304,8 +2304,8 @@ func testTeamMembersMinusGroupMembers(t *testing.T, ss store.Store) {
 	user, err = ss.User().Save(user)
 	require.Nil(t, err)
 	users = append(users, user)
-	res := <-ss.Team().SaveMember(&model.TeamMember{TeamId: team.Id, UserId: user.Id, SchemeUser: true, SchemeAdmin: false}, 999)
-	require.Nil(t, res.Err)
+	_, err = ss.Team().SaveMember(&model.TeamMember{TeamId: team.Id, UserId: user.Id, SchemeUser: true, SchemeAdmin: false}, 999)
+	require.Nil(t, err)
 
 	for i := 0; i < numberOfGroups; i++ {
 		group := &model.Group{
@@ -2444,7 +2444,7 @@ func testChannelMembersMinusGroupMembers(t *testing.T, ss store.Store) {
 		users = append(users, user)
 
 		trueOrFalse := int(math.Mod(float64(i), 2)) == 0
-		_, err := ss.Channel().SaveMember(&model.ChannelMember{
+		_, err = ss.Channel().SaveMember(&model.ChannelMember{
 			ChannelId:   channel.Id,
 			UserId:      user.Id,
 			SchemeUser:  trueOrFalse,
@@ -2461,14 +2461,14 @@ func testChannelMembersMinusGroupMembers(t *testing.T, ss store.Store) {
 	})
 	require.Nil(t, err)
 	users = append(users, user)
-	res := <-ss.Channel().SaveMember(&model.ChannelMember{
+	_, err = ss.Channel().SaveMember(&model.ChannelMember{
 		ChannelId:   channel.Id,
 		UserId:      user.Id,
 		SchemeUser:  true,
 		SchemeAdmin: false,
 		NotifyProps: model.GetDefaultChannelNotifyProps(),
 	})
-	require.Nil(t, res.Err)
+	require.Nil(t, err)
 
 	for i := 0; i < numberOfGroups; i++ {
 		group := &model.Group{
