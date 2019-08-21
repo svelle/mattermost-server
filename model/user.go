@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"sort"
@@ -83,6 +84,7 @@ type User struct {
 	MfaSecret              string    `json:"mfa_secret,omitempty"`
 	LastActivityAt         int64     `db:"-" json:"last_activity_at,omitempty"`
 	IsBot                  bool      `db:"-" json:"is_bot,omitempty"`
+	BotDescription         string    `db:"-" json:"bot_description,omitempty"`
 	TermsOfServiceId       string    `db:"-" json:"terms_of_service_id,omitempty"`
 	TermsOfServiceCreateAt int64     `db:"-" json:"terms_of_service_create_at,omitempty"`
 }
@@ -157,6 +159,17 @@ func (u UserSlice) IDs() []string {
 		ids = append(ids, user.Id)
 	}
 	return ids
+}
+
+func (u UserSlice) FilterWithoutBots() UserSlice {
+	var matches []*User
+
+	for _, user := range u {
+		if !user.IsBot {
+			matches = append(matches, user)
+		}
+	}
+	return UserSlice(matches)
 }
 
 func (u UserSlice) FilterByActive(active bool) UserSlice {
@@ -766,4 +779,36 @@ func IsValidLocale(locale string) bool {
 	}
 
 	return true
+}
+
+type UserWithGroups struct {
+	User
+	GroupIDs    *string  `json:"-"`
+	Groups      []*Group `json:"groups"`
+	SchemeGuest bool     `json:"scheme_guest"`
+	SchemeUser  bool     `json:"scheme_user"`
+	SchemeAdmin bool     `json:"scheme_admin"`
+}
+
+func (u *UserWithGroups) GetGroupIDs() []string {
+	if u.GroupIDs == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*u.GroupIDs)
+	if len(trimmed) == 0 {
+		return nil
+	}
+	return strings.Split(trimmed, ",")
+}
+
+type UsersWithGroupsAndCount struct {
+	Users []*UserWithGroups `json:"users"`
+	Count int64             `json:"total_count"`
+}
+
+func UsersWithGroupsAndCountFromJson(data io.Reader) *UsersWithGroupsAndCount {
+	uwg := &UsersWithGroupsAndCount{}
+	bodyBytes, _ := ioutil.ReadAll(data)
+	json.Unmarshal(bodyBytes, uwg)
+	return uwg
 }

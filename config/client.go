@@ -42,9 +42,10 @@ func GenerateClientConfig(c *model.Config, diagnosticId string, license *model.L
 	props["EnableTutorial"] = strconv.FormatBool(*c.ServiceSettings.EnableTutorial)
 	props["ExperimentalEnableDefaultChannelLeaveJoinMessages"] = strconv.FormatBool(*c.ServiceSettings.ExperimentalEnableDefaultChannelLeaveJoinMessages)
 	props["ExperimentalGroupUnreadChannels"] = *c.ServiceSettings.ExperimentalGroupUnreadChannels
+	props["EnableSVGs"] = strconv.FormatBool(*c.ServiceSettings.EnableSVGs)
 
 	// This setting is only temporary, so keep using the old setting name for the mobile and web apps
-	props["ExperimentalEnablePostMetadata"] = strconv.FormatBool(!*c.ExperimentalSettings.DisablePostMetadata)
+	props["ExperimentalEnablePostMetadata"] = "true"
 	props["ExperimentalEnableClickToReply"] = strconv.FormatBool(*c.ExperimentalSettings.EnableClickToReply)
 
 	if *c.ServiceSettings.ExperimentalChannelOrganization || *c.ServiceSettings.ExperimentalGroupUnreadChannels != model.GROUP_UNREAD_CHANNELS_DISABLED {
@@ -94,12 +95,14 @@ func GenerateClientConfig(c *model.Config, diagnosticId string, license *model.L
 	props["LdapNicknameAttributeSet"] = "false"
 	props["LdapFirstNameAttributeSet"] = "false"
 	props["LdapLastNameAttributeSet"] = "false"
+	props["LdapPositionAttributeSet"] = "false"
 	props["EnableCompliance"] = "false"
 	props["EnableMobileFileDownload"] = "true"
 	props["EnableMobileFileUpload"] = "true"
 	props["SamlFirstNameAttributeSet"] = "false"
 	props["SamlLastNameAttributeSet"] = "false"
 	props["SamlNicknameAttributeSet"] = "false"
+	props["SamlPositionAttributeSet"] = "false"
 	props["EnableCluster"] = "false"
 	props["EnableMetrics"] = "false"
 	props["PasswordMinimumLength"] = "0"
@@ -136,6 +139,7 @@ func GenerateClientConfig(c *model.Config, diagnosticId string, license *model.L
 			props["LdapNicknameAttributeSet"] = strconv.FormatBool(*c.LdapSettings.NicknameAttribute != "")
 			props["LdapFirstNameAttributeSet"] = strconv.FormatBool(*c.LdapSettings.FirstNameAttribute != "")
 			props["LdapLastNameAttributeSet"] = strconv.FormatBool(*c.LdapSettings.LastNameAttribute != "")
+			props["LdapPositionAttributeSet"] = strconv.FormatBool(*c.LdapSettings.PositionAttribute != "")
 		}
 
 		if *license.Features.Compliance {
@@ -148,6 +152,7 @@ func GenerateClientConfig(c *model.Config, diagnosticId string, license *model.L
 			props["SamlFirstNameAttributeSet"] = strconv.FormatBool(*c.SamlSettings.FirstNameAttribute != "")
 			props["SamlLastNameAttributeSet"] = strconv.FormatBool(*c.SamlSettings.LastNameAttribute != "")
 			props["SamlNicknameAttributeSet"] = strconv.FormatBool(*c.SamlSettings.NicknameAttribute != "")
+			props["SamlPositionAttributeSet"] = strconv.FormatBool(*c.SamlSettings.PositionAttribute != "")
 
 			// do this under the correct licensed feature
 			props["ExperimentalClientSideCertEnable"] = strconv.FormatBool(*c.ExperimentalSettings.ClientSideCertEnable)
@@ -269,6 +274,8 @@ func GenerateLimitedClientConfig(c *model.Config, diagnosticId string, license *
 	props["CustomDescriptionText"] = *c.TeamSettings.CustomDescriptionText
 	props["EnableMultifactorAuthentication"] = strconv.FormatBool(*c.ServiceSettings.EnableMultifactorAuthentication)
 	props["EnforceMultifactorAuthentication"] = "false"
+	props["EnableGuestAccounts"] = strconv.FormatBool(*c.GuestAccountsSettings.Enable)
+	props["GuestAccountsEnforceMultifactorAuthentication"] = strconv.FormatBool(*c.GuestAccountsSettings.EnforceMultifactorAuthentication)
 
 	if license != nil {
 		if *license.Features.LDAP {

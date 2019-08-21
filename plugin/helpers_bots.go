@@ -4,9 +4,8 @@
 package plugin
 
 import (
-	"time"
-
 	"github.com/mattermost/mattermost-server/model"
+	"github.com/mattermost/mattermost-server/utils"
 	"github.com/pkg/errors"
 )
 
@@ -17,11 +16,20 @@ func (p *HelpersImpl) EnsureBot(bot *model.Bot) (retBotId string, retErr error) 
 	}
 
 	// If we fail for any reason, this could be a race between creation of bot and
-	// retreval from anouther EnsureBot. Just try the basic retrieve existing again.
+	// retrieval from another EnsureBot. Just try the basic retrieve existing again.
 	defer func() {
 		if retBotId == "" || retErr != nil {
-			time.Sleep(time.Second)
-			botIdBytes, err := p.API.KVGet(BOT_USER_KEY)
+			var err error
+			var botIdBytes []byte
+
+			err = utils.ProgressiveRetry(func() error {
+				botIdBytes, err = p.API.KVGet(BOT_USER_KEY)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+
 			if err == nil && botIdBytes != nil {
 				retBotId = string(botIdBytes)
 				retErr = nil
@@ -46,10 +54,10 @@ func (p *HelpersImpl) EnsureBot(bot *model.Bot) (retBotId string, retErr error) 
 			if kvSetErr := p.API.KVSet(BOT_USER_KEY, []byte(user.Id)); kvSetErr != nil {
 				p.API.LogWarn("Failed to set claimed bot user id.", "userid", user.Id, "err", kvSetErr)
 			}
-			return user.Id, nil
 		} else {
-			return "", errors.New("unable to create bot because user exists with the same name")
+			p.API.LogError("Plugin attempted to use an account that already exists. Convert user to a bot account in the CLI by running 'mattermost user convert <username> --bot'. If the user is an existing user account you want to preserve, change its username and restart the Mattermost server, after which the plugin will create a bot account with that name. For more information about bot accounts, see https://mattermost.com/pl/default-bot-accounts", "username", bot.Username, "user_id", user.Id)
 		}
+		return user.Id, nil
 	}
 
 	// Create a new bot user for the plugin
