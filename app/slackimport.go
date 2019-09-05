@@ -539,7 +539,7 @@ func (a *App) SlackUploadFile(slackPostFile *SlackFile, uploads map[string]*zip.
 	}
 	file, ok := uploads[slackPostFile.Id]
 	if !ok {
-		//mlog.Warn(fmt.Sprintf("Slack Import: Unable to import file %v as the file is missing from the Slack export zip file.", slackPostFile.Id))
+		mlog.Warn(fmt.Sprintf("Slack Import: Unable to import file %v as the file is missing from the Slack export zip file.", slackPostFile.Id))
 		return nil, false
 	}
 	openFile, err := file.Open()
@@ -697,6 +697,16 @@ func SlackConvertPosts(users []SlackUser, posts map[string][]SlackPost, channels
 		},
 	}
 
+	var channelRegexps = make(map[string]*regexp.Regexp, len(channels))
+	for _, channel := range channels {
+		r, err := regexp.Compile("<#" + channel.Id + `(\|` + channel.Name + ")?>")
+		if err != nil {
+			mlog.Warn(fmt.Sprintf("Slack Import: Unable to compile the !channel, matching regular expression for the Slack channel %v (id=%v).", channel.Id, channel.Name))
+			continue
+		}
+		channelRegexps["~"+channel.Name] = r
+	}
+
 	var userRegexps = make(map[string]*regexp.Regexp, len(users))
 	for _, user := range users {
 		r, err := regexp.Compile("<@" + user.Id + `(\|` + user.Username + ")?>")
@@ -707,15 +717,6 @@ func SlackConvertPosts(users []SlackUser, posts map[string][]SlackPost, channels
 		userRegexps["@"+user.Username] = r
 	}
 
-	var channelRegexps = make(map[string]*regexp.Regexp, len(channels))
-	for _, channel := range channels {
-		r, err := regexp.Compile("<#" + channel.Id + `(\|` + channel.Name + ")?>")
-		if err != nil {
-			mlog.Warn(fmt.Sprintf("Slack Import: Unable to compile the !channel, matching regular expression for the Slack channel %v (id=%v).", channel.Id, channel.Name))
-			continue
-		}
-		channelRegexps["~"+channel.Name] = r
-	}
 
 	// Special cases.
 	userRegexps["@here"], _ = regexp.Compile(`<!here\|@here>`)
@@ -765,6 +766,121 @@ func SlackConvertPosts(users []SlackUser, posts map[string][]SlackPost, channels
 	}
 
 	mlog.Debug(fmt.Sprintf("Slack Import: All channel workers finished."))
+	return posts
+}
+
+func SlackConvertUserMentions(users []SlackUser, posts map[string][]SlackPost) map[string][]SlackPost {
+	var regexes = make(map[string]*regexp.Regexp, len(users))
+	for _, user := range users {
+		r, err := regexp.Compile("<@" + user.Id + `(\|` + user.Username + ")?>")
+		if err != nil {
+			mlog.Warn(fmt.Sprintf("Slack Import: Unable to compile the @mention, matching regular expression for the Slack user %v (id=%v).", user.Id, user.Username), mlog.String("user_id", user.Id))
+			continue
+		}
+		regexes["@"+user.Username] = r
+	}
+
+	// Special cases.
+	regexes["@here"], _ = regexp.Compile(`<!here\|@here>`)
+	regexes["@channel"], _ = regexp.Compile("<!channel>")
+	regexes["@all"], _ = regexp.Compile("<!everyone>")
+
+	for channelName, channelPosts := range posts {
+		for postIdx, post := range channelPosts {
+			for mention, r := range regexes {
+				post.Text = r.ReplaceAllString(post.Text, mention)
+				posts[channelName][postIdx] = post
+			}
+		}
+	}
+
+	return posts
+}
+
+func SlackConvertChannelMentions(channels []SlackChannel, posts map[string][]SlackPost) map[string][]SlackPost {
+	var regexes = make(map[string]*regexp.Regexp, len(channels))
+	for _, channel := range channels {
+		r, err := regexp.Compile("<#" + channel.Id + `(\|` + channel.Name + ")?>")
+		if err != nil {
+			mlog.Warn(fmt.Sprintf("Slack Import: Unable to compile the !channel, matching regular expression for the Slack channel %v (id=%v).", channel.Id, channel.Name))
+			continue
+		}
+		regexes["~"+channel.Name] = r
+	}
+
+	for channelName, channelPosts := range posts {
+		for postIdx, post := range channelPosts {
+			for channelReplace, r := range regexes {
+				post.Text = r.ReplaceAllString(post.Text, channelReplace)
+				posts[channelName][postIdx] = post
+			}
+		}
+	}
+
+	return posts
+}
+
+func SlackConvertPostsMarkup(posts map[string][]SlackPost) map[string][]SlackPost {
+	regexReplaceAllString := []struct {
+		regex *regexp.Regexp
+		rpl   string
+	}{
+		// URL
+		{
+			regexp.MustCompile(`<([^|<>]+)\|([^|<>]+)>`),
+			"[$2]($1)",
+		},
+		// bold
+		{
+			regexp.MustCompile(`(^|[\s.;,])\*(\S[^*\n]+)\*`),
+			"$1**$2**",
+		},
+		// strikethrough
+		{
+			regexp.MustCompile(`(^|[\s.;,])\~(\S[^~\n]+)\~`),
+			"$1~~$2~~",
+		},
+		// single paragraph blockquote
+		// Slack converts > character to &gt;
+		{
+			regexp.MustCompile(`(?sm)^&gt;`),
+			">",
+		},
+	}
+
+	regexReplaceAllStringFunc := []struct {
+		regex *regexp.Regexp
+		fn    func(string) string
+	}{
+		// multiple paragraphs blockquotes
+		{
+			regexp.MustCompile(`(?sm)^>&gt;&gt;(.+)$`),
+			func(src string) string {
+				// remove >>> prefix, might have leading \n
+				prefixRegexp := regexp.MustCompile(`^([\n])?>&gt;&gt;(.*)`)
+				src = prefixRegexp.ReplaceAllString(src, "$1$2")
+				// append > to start of line
+				appendRegexp := regexp.MustCompile(`(?m)^`)
+				return appendRegexp.ReplaceAllString(src, ">$0")
+			},
+		},
+	}
+
+	for channelName, channelPosts := range posts {
+		for postIdx, post := range channelPosts {
+			result := post.Text
+
+			for _, rule := range regexReplaceAllString {
+				result = rule.regex.ReplaceAllString(result, rule.rpl)
+			}
+
+			for _, rule := range regexReplaceAllStringFunc {
+				result = rule.regex.ReplaceAllStringFunc(result, rule.fn)
+			}
+			posts[channelName][postIdx].Text = result
+		}
+	}
+
 	return posts
 }
 
@@ -869,7 +985,10 @@ func (a *App) SlackImport(fileData multipart.File, fileSize int64, teamID string
 	mlog.Debug(fmt.Sprintf("Slack Import: Added dummies for deleted Slack users."))
 
 	mlog.Debug(fmt.Sprintf("Slack Import: Converting user and channel mentions."))
-	posts = SlackConvertPosts(users, posts, channels)
+	//posts = SlackConvertPosts(users, posts, channels)
+	posts = SlackConvertUserMentions(users, posts)
+	posts = SlackConvertChannelMentions(channels, posts)
+	posts = SlackConvertPostsMarkup(posts)
 	mlog.Debug(fmt.Sprintf("Slack Import: Converted user and channel mentions."))
 
 	mlog.Debug(fmt.Sprintf("Slack Import: Adding Slack users to Mattermost team."))
