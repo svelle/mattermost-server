@@ -358,6 +358,17 @@ func (a *App) SendInviteEmails(team *model.Team, senderName string, senderUserId
 	}
 }
 
+func (a *App) SendSupportEmail(email, subject string, body string) *model.AppError {
+
+	htmlBody := "<div>" + body + "</div>";
+
+	if err := a.SendMail(email, subject, htmlBody); err != nil {
+		return model.NewAppError("SendSupportEmail", "api.user.send_support_email.error", nil, err.Error(), http.StatusInternalServerError)
+	}
+
+	return nil
+}
+
 func (a *App) SendGuestInviteEmails(team *model.Team, channels []*model.Channel, senderName string, senderUserId string, invites []string, siteURL string, message string) {
 	if a.Srv.EmailRateLimiter == nil {
 		a.Log.Error("Email invite not sent, rate limiting could not be setup.", mlog.String("user_id", senderUserId), mlog.String("team_id", team.Id))
