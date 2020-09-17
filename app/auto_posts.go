@@ -1,5 +1,5 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// See LICENSE.txt for license information.
 
 package app
 
@@ -9,14 +9,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mattermost/mattermost-server/model"
-	"github.com/mattermost/mattermost-server/utils"
-	"github.com/mattermost/mattermost-server/utils/fileutils"
+	"github.com/mattermost/mattermost-server/v5/model"
+	"github.com/mattermost/mattermost-server/v5/utils"
+	"github.com/mattermost/mattermost-server/v5/utils/fileutils"
 )
 
 type AutoPostCreator struct {
-	client         *model.Client4
+	a              *App
 	channelid      string
+	userid         string
 	Fuzzy          bool
 	TextLength     utils.Range
 	HasImage       bool
@@ -27,10 +28,11 @@ type AutoPostCreator struct {
 }
 
 // Automatic poster used for testing
-func NewAutoPostCreator(client *model.Client4, channelid string) *AutoPostCreator {
+func NewAutoPostCreator(a *App, channelid, userid string) *AutoPostCreator {
 	return &AutoPostCreator{
-		client:         client,
+		a:              a,
 		channelid:      channelid,
+		userid:         userid,
 		Fuzzy:          false,
 		TextLength:     utils.Range{Begin: 100, End: 200},
 		HasImage:       false,
@@ -41,37 +43,41 @@ func NewAutoPostCreator(client *model.Client4, channelid string) *AutoPostCreato
 	}
 }
 
-func (cfg *AutoPostCreator) UploadTestFile() ([]string, bool) {
+func (cfg *AutoPostCreator) UploadTestFile() ([]string, error) {
 	filename := cfg.ImageFilenames[utils.RandIntFromRange(utils.Range{Begin: 0, End: len(cfg.ImageFilenames) - 1})]
 
-	path, _ := fileutils.FindDir("web/static/images")
+	path, _ := fileutils.FindDir("tests")
 	file, err := os.Open(filepath.Join(path, filename))
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	defer file.Close()
 
 	data := &bytes.Buffer{}
 	_, err = io.Copy(data, file)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 
-	resp, appErr := cfg.client.UploadFile(data.Bytes(), cfg.channelid, filename)
-	if appErr != nil {
-		return nil, false
+	fileResp, err2 := cfg.a.UploadFile(data.Bytes(), cfg.channelid, filename)
+	if err2 != nil {
+		return nil, err2
 	}
 
-	return []string{resp.FileInfos[0].Id}, true
+	return []string{fileResp.Id}, nil
 }
 
-func (cfg *AutoPostCreator) CreateRandomPost() (*model.Post, bool) {
+func (cfg *AutoPostCreator) CreateRandomPost() (*model.Post, error) {
+	return cfg.CreateRandomPostNested("", "")
+}
+
+func (cfg *AutoPostCreator) CreateRandomPostNested(parentId, rootId string) (*model.Post, error) {
 	var fileIds []string
 	if cfg.HasImage {
-		var err1 bool
-		fileIds, err1 = cfg.UploadTestFile()
-		if !err1 {
-			return nil, false
+		var err error
+		fileIds, err = cfg.UploadTestFile()
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -84,11 +90,15 @@ func (cfg *AutoPostCreator) CreateRandomPost() (*model.Post, bool) {
 
 	post := &model.Post{
 		ChannelId: cfg.channelid,
+		UserId:    cfg.userid,
+		ParentId:  parentId,
+		RootId:    rootId,
 		Message:   postText,
-		FileIds:   fileIds}
-	rpost, err2 := cfg.client.CreatePost(post)
-	if err2 != nil {
-		return nil, false
+		FileIds:   fileIds,
 	}
-	return rpost, true
+	rpost, err := cfg.a.CreatePostMissingChannel(post, true)
+	if err != nil {
+		return nil, err
+	}
+	return rpost, nil
 }

@@ -1,11 +1,11 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 package testlib
 
 import (
-	"github.com/mattermost/mattermost-server/einterfaces"
-	"github.com/mattermost/mattermost-server/model"
+	"github.com/mattermost/mattermost-server/v5/einterfaces"
+	"github.com/mattermost/mattermost-server/v5/model"
 )
 
 type FakeClusterInterface struct {
@@ -19,6 +19,10 @@ func (c *FakeClusterInterface) StopInterNodeCommunication() {}
 
 func (c *FakeClusterInterface) RegisterClusterMessageHandler(event string, crm einterfaces.ClusterMessageHandler) {
 	c.clusterMessageHandler = crm
+}
+
+func (c *FakeClusterInterface) HealthScore() int {
+	return 0
 }
 
 func (c *FakeClusterInterface) GetClusterId() string { return "" }
@@ -48,9 +52,11 @@ func (c *FakeClusterInterface) ConfigChanged(previousConfig *model.Config, newCo
 }
 
 func (c *FakeClusterInterface) SendClearRoleCacheMessage() {
-	c.clusterMessageHandler(&model.ClusterMessage{
-		Event: model.CLUSTER_EVENT_INVALIDATE_CACHE_FOR_ROLES,
-	})
+	if c.clusterMessageHandler != nil {
+		c.clusterMessageHandler(&model.ClusterMessage{
+			Event: model.CLUSTER_EVENT_INVALIDATE_CACHE_FOR_ROLES,
+		})
+	}
 }
 
 func (c *FakeClusterInterface) GetPluginStatuses() (model.PluginStatuses, *model.AppError) {

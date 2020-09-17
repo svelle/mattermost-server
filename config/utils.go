@@ -1,14 +1,15 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// See LICENSE.txt for license information.
 
 package config
 
 import (
+	"encoding/json"
 	"strings"
 
-	"github.com/mattermost/mattermost-server/mlog"
-	"github.com/mattermost/mattermost-server/model"
-	"github.com/mattermost/mattermost-server/utils"
+	"github.com/mattermost/mattermost-server/v5/mlog"
+	"github.com/mattermost/mattermost-server/v5/model"
+	"github.com/mattermost/mattermost-server/v5/utils"
 )
 
 // desanitize replaces fake settings with their actual values.
@@ -66,7 +67,7 @@ func fixConfig(cfg *model.Config) bool {
 
 	// Ensure the directory for a local file store has a trailing slash.
 	if *cfg.FileSettings.DriverName == model.IMAGE_DRIVER_LOCAL {
-		if !strings.HasSuffix(*cfg.FileSettings.Directory, "/") {
+		if *cfg.FileSettings.Directory != "" && !strings.HasSuffix(*cfg.FileSettings.Directory, "/") {
 			*cfg.FileSettings.Directory += "/"
 			changed = true
 		}
@@ -139,4 +140,39 @@ func Merge(cfg *model.Config, patch *model.Config, mergeConfig *utils.MergeConfi
 
 	retCfg := ret.(model.Config)
 	return &retCfg, nil
+}
+
+// stripPassword remove the password from a given DSN
+func stripPassword(dsn, schema string) string {
+	prefix := schema + "://"
+	dsn = strings.TrimPrefix(dsn, prefix)
+
+	i := strings.Index(dsn, ":")
+	j := strings.LastIndex(dsn, "@")
+
+	// Return error if no @ sign is found
+	if j < 0 {
+		return "(omitted due to error parsing the DSN)"
+	}
+
+	// Return back the input if no password is found
+	if i < 0 || i > j {
+		return prefix + dsn
+	}
+
+	return prefix + dsn[:i+1] + dsn[j:]
+}
+
+func IsJsonMap(data string) bool {
+	var m map[string]interface{}
+	return json.Unmarshal([]byte(data), &m) == nil
+}
+
+func JSONToLogTargetCfg(data []byte) (mlog.LogTargetCfg, error) {
+	cfg := make(mlog.LogTargetCfg)
+	err := json.Unmarshal(data, &cfg)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }

@@ -1,5 +1,5 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// See LICENSE.txt for license information.
 
 package app
 
@@ -12,16 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dyatlov/go-opengraph/opengraph"
-	"github.com/mattermost/mattermost-server/model"
-	"github.com/mattermost/mattermost-server/services/httpservice"
-	"github.com/mattermost/mattermost-server/services/imageproxy"
-	"github.com/mattermost/mattermost-server/utils/testutils"
+	"github.com/mattermost/mattermost-server/v5/model"
+	"github.com/mattermost/mattermost-server/v5/services/httpservice"
+	"github.com/mattermost/mattermost-server/v5/services/imageproxy"
+	"github.com/mattermost/mattermost-server/v5/utils/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ import (
 func TestPreparePostListForClient(t *testing.T) {
 	// Most of this logic is covered by TestPreparePostForClient, so this just tests handling of multiple posts
 
-	th := Setup(t).InitBasic()
+	th := Setup(t)
 	defer th.TearDown()
 
 	postList := model.NewPostList()
@@ -58,19 +59,61 @@ func TestPreparePostListForClient(t *testing.T) {
 }
 
 func TestPreparePostForClient(t *testing.T) {
-	setup := func() *TestHelper {
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`
+			<html>
+			<head>
+			<meta property="og:image" content="` + serverURL + `/test-image3.png" />
+			<meta property="og:site_name" content="GitHub" />
+			<meta property="og:type" content="object" />
+			<meta property="og:title" content="hmhealey/test-files" />
+			<meta property="og:url" content="https://github.com/hmhealey/test-files" />
+			<meta property="og:description" content="Contribute to hmhealey/test-files development by creating an account on GitHub." />
+			</head>
+			</html>`))
+		case "/test-image1.png":
+			file, err := testutils.ReadTestFile("test.png")
+			require.Nil(t, err)
+
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(file)
+		case "/test-image2.png":
+			file, err := testutils.ReadTestFile("test-data-graph.png")
+			require.Nil(t, err)
+
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(file)
+		case "/test-image3.png":
+			file, err := testutils.ReadTestFile("qa-data-graph.png")
+			require.Nil(t, err)
+
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(file)
+		default:
+			require.Fail(t, "Invalid path", r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	setup := func(t *testing.T) *TestHelper {
 		th := Setup(t).InitBasic()
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
 			*cfg.ServiceSettings.EnableLinkPreviews = true
 			*cfg.ImageProxySettings.Enable = false
+			*cfg.ServiceSettings.AllowedUntrustedInternalConnections = "localhost,127.0.0.1"
 		})
 
 		return th
 	}
 
 	t.Run("no metadata needed", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		message := model.NewId()
@@ -90,16 +133,16 @@ func TestPreparePostForClient(t *testing.T) {
 		t.Run("populates all fields", func(t *testing.T) {
 			assert.Equal(t, message, clientPost.Message, "shouldn't have changed Message")
 			assert.NotEqual(t, nil, clientPost.Metadata, "should've populated Metadata")
-			assert.Len(t, clientPost.Metadata.Embeds, 0, "should've populated Embeds")
-			assert.Len(t, clientPost.Metadata.Reactions, 0, "should've populated Reactions")
-			assert.Len(t, clientPost.Metadata.Files, 0, "should've populated Files")
-			assert.Len(t, clientPost.Metadata.Emojis, 0, "should've populated Emojis")
-			assert.Len(t, clientPost.Metadata.Images, 0, "should've populated Images")
+			assert.Empty(t, clientPost.Metadata.Embeds, "should've populated Embeds")
+			assert.Empty(t, clientPost.Metadata.Reactions, "should've populated Reactions")
+			assert.Empty(t, clientPost.Metadata.Files, "should've populated Files")
+			assert.Empty(t, clientPost.Metadata.Emojis, "should've populated Emojis")
+			assert.Empty(t, clientPost.Metadata.Images, "should've populated Images")
 		})
 	})
 
 	t.Run("metadata already set", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post := th.CreatePost(th.BasicChannel)
@@ -111,7 +154,7 @@ func TestPreparePostForClient(t *testing.T) {
 	})
 
 	t.Run("reactions", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post := th.CreatePost(th.BasicChannel)
@@ -129,7 +172,7 @@ func TestPreparePostForClient(t *testing.T) {
 	})
 
 	t.Run("files", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		fileInfo, err := th.App.DoUploadFile(time.Now(), th.BasicTeam.Id, th.BasicChannel.Id, th.BasicUser.Id, "test.txt", []byte("test"))
@@ -139,7 +182,7 @@ func TestPreparePostForClient(t *testing.T) {
 			UserId:    th.BasicUser.Id,
 			ChannelId: th.BasicChannel.Id,
 			FileIds:   []string{fileInfo.Id},
-		}, th.BasicChannel, false)
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		fileInfo.PostId = post.Id
@@ -150,7 +193,7 @@ func TestPreparePostForClient(t *testing.T) {
 	})
 
 	t.Run("emojis without custom emojis enabled", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
@@ -170,7 +213,7 @@ func TestPreparePostForClient(t *testing.T) {
 					},
 				},
 			},
-		}, th.BasicChannel, false)
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		th.AddReactionToPost(post, th.BasicUser, "smile")
@@ -191,7 +234,7 @@ func TestPreparePostForClient(t *testing.T) {
 	})
 
 	t.Run("emojis with custom emojis enabled", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
@@ -214,7 +257,7 @@ func TestPreparePostForClient(t *testing.T) {
 					},
 				},
 			},
-		}, th.BasicChannel, false)
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		th.AddReactionToPost(post, th.BasicUser, emoji1.Name)
@@ -236,7 +279,7 @@ func TestPreparePostForClient(t *testing.T) {
 	})
 
 	t.Run("emojis overriding profile icon", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		prepare := func(override bool, url, emoji string) *model.Post {
@@ -248,7 +291,7 @@ func TestPreparePostForClient(t *testing.T) {
 				UserId:    th.BasicUser.Id,
 				ChannelId: th.BasicChannel.Id,
 				Message:   "Test",
-			}, th.BasicChannel, false)
+			}, th.BasicChannel, false, true)
 
 			require.Nil(t, err)
 
@@ -265,32 +308,36 @@ func TestPreparePostForClient(t *testing.T) {
 		t.Run("does not override icon URL", func(t *testing.T) {
 			clientPost := prepare(false, url, emoji)
 
-			s, _ := clientPost.Props[model.POST_PROPS_OVERRIDE_ICON_URL]
+			s, ok := clientPost.GetProps()[model.POST_PROPS_OVERRIDE_ICON_URL]
+			assert.True(t, ok)
 			assert.EqualValues(t, url, s)
-			s, _ = clientPost.Props[model.POST_PROPS_OVERRIDE_ICON_EMOJI]
+			s, ok = clientPost.GetProps()[model.POST_PROPS_OVERRIDE_ICON_EMOJI]
+			assert.True(t, ok)
 			assert.EqualValues(t, emoji, s)
 		})
 
 		t.Run("overrides icon URL", func(t *testing.T) {
 			clientPost := prepare(true, url, emoji)
 
-			s, _ := clientPost.Props[model.POST_PROPS_OVERRIDE_ICON_URL]
+			s, ok := clientPost.GetProps()[model.POST_PROPS_OVERRIDE_ICON_URL]
+			assert.True(t, ok)
 			assert.EqualValues(t, overridenUrl, s)
-			s, _ = clientPost.Props[model.POST_PROPS_OVERRIDE_ICON_EMOJI]
+			s, ok = clientPost.GetProps()[model.POST_PROPS_OVERRIDE_ICON_EMOJI]
+			assert.True(t, ok)
 			assert.EqualValues(t, emoji, s)
 		})
 
 	})
 
 	t.Run("markdown image dimensions", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post, err := th.App.CreatePost(&model.Post{
 			UserId:    th.BasicUser.Id,
 			ChannelId: th.BasicChannel.Id,
-			Message:   "This is ![our logo](https://github.com/hmhealey/test-files/raw/master/logoVertical.png) and ![our icon](https://github.com/hmhealey/test-files/raw/master/icon.png)",
-		}, th.BasicChannel, false)
+			Message:   fmt.Sprintf("This is ![our logo](%s/test-image2.png) and ![our icon](%s/test-image1.png)", server.URL, server.URL),
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		clientPost := th.App.PreparePostForClient(post, false, false)
@@ -300,41 +347,41 @@ func TestPreparePostForClient(t *testing.T) {
 			require.Len(t, imageDimensions, 2)
 			assert.Equal(t, &model.PostImage{
 				Format: "png",
-				Width:  1068,
-				Height: 552,
-			}, imageDimensions["https://github.com/hmhealey/test-files/raw/master/logoVertical.png"])
+				Width:  1280,
+				Height: 1780,
+			}, imageDimensions[server.URL+"/test-image2.png"])
 			assert.Equal(t, &model.PostImage{
 				Format: "png",
-				Width:  501,
-				Height: 501,
-			}, imageDimensions["https://github.com/hmhealey/test-files/raw/master/icon.png"])
+				Width:  408,
+				Height: 336,
+			}, imageDimensions[server.URL+"/test-image1.png"])
 		})
 	})
 
 	t.Run("proxy linked images", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		testProxyLinkedImage(t, th, false)
 	})
 
 	t.Run("proxy opengraph images", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		testProxyOpenGraphImage(t, th, false)
 	})
 
 	t.Run("image embed", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post, err := th.App.CreatePost(&model.Post{
 			UserId:    th.BasicUser.Id,
 			ChannelId: th.BasicChannel.Id,
-			Message: `This is our logo: https://github.com/hmhealey/test-files/raw/master/logoVertical.png
-	And this is our icon: https://github.com/hmhealey/test-files/raw/master/icon.png`,
-		}, th.BasicChannel, false)
+			Message: `This is our logo: ` + server.URL + `/test-image2.png
+	And this is our icon: ` + server.URL + `/test-image1.png`,
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		clientPost := th.App.PreparePostForClient(post, false, false)
@@ -345,7 +392,7 @@ func TestPreparePostForClient(t *testing.T) {
 			assert.ElementsMatch(t, []*model.PostEmbed{
 				{
 					Type: model.POST_EMBED_IMAGE,
-					URL:  "https://github.com/hmhealey/test-files/raw/master/logoVertical.png",
+					URL:  server.URL + "/test-image2.png",
 				},
 			}, clientPost.Metadata.Embeds)
 		})
@@ -355,21 +402,21 @@ func TestPreparePostForClient(t *testing.T) {
 			require.Len(t, imageDimensions, 1)
 			assert.Equal(t, &model.PostImage{
 				Format: "png",
-				Width:  1068,
-				Height: 552,
-			}, imageDimensions["https://github.com/hmhealey/test-files/raw/master/logoVertical.png"])
+				Width:  1280,
+				Height: 1780,
+			}, imageDimensions[server.URL+"/test-image2.png"])
 		})
 	})
 
 	t.Run("opengraph embed", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post, err := th.App.CreatePost(&model.Post{
 			UserId:    th.BasicUser.Id,
 			ChannelId: th.BasicChannel.Id,
-			Message:   `This is our web page: https://github.com/hmhealey/test-files`,
-		}, th.BasicChannel, false)
+			Message:   `This is our web page: ` + server.URL,
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		clientPost := th.App.PreparePostForClient(post, false, false)
@@ -378,13 +425,13 @@ func TestPreparePostForClient(t *testing.T) {
 
 		t.Run("populates embeds", func(t *testing.T) {
 			assert.Equal(t, firstEmbed.Type, model.POST_EMBED_OPENGRAPH)
-			assert.Equal(t, firstEmbed.URL, "https://github.com/hmhealey/test-files")
+			assert.Equal(t, firstEmbed.URL, server.URL)
 			assert.Equal(t, ogData.Description, "Contribute to hmhealey/test-files development by creating an account on GitHub.")
 			assert.Equal(t, ogData.SiteName, "GitHub")
 			assert.Equal(t, ogData.Title, "hmhealey/test-files")
 			assert.Equal(t, ogData.Type, "object")
-			assert.Equal(t, ogData.URL, "https://github.com/hmhealey/test-files")
-			assert.Equal(t, ogData.Images[0].URL, "https://avatars1.githubusercontent.com/u/3277310?s=400&v=4")
+			assert.Equal(t, ogData.URL, server.URL)
+			assert.Equal(t, ogData.Images[0].URL, server.URL+"/test-image3.png")
 		})
 
 		t.Run("populates image dimensions", func(t *testing.T) {
@@ -392,14 +439,14 @@ func TestPreparePostForClient(t *testing.T) {
 			require.Len(t, imageDimensions, 1)
 			assert.Equal(t, &model.PostImage{
 				Format: "png",
-				Width:  420,
-				Height: 420,
-			}, imageDimensions["https://avatars1.githubusercontent.com/u/3277310?s=400&v=4"])
+				Width:  1790,
+				Height: 1340,
+			}, imageDimensions[server.URL+"/test-image3.png"])
 		})
 	})
 
 	t.Run("message attachment embed", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		post, err := th.App.CreatePost(&model.Post{
@@ -408,11 +455,11 @@ func TestPreparePostForClient(t *testing.T) {
 			Props: map[string]interface{}{
 				"attachments": []interface{}{
 					map[string]interface{}{
-						"text": "![icon](https://github.com/hmhealey/test-files/raw/master/icon.png)",
+						"text": "![icon](" + server.URL + "/test-image1.png)",
 					},
 				},
 			},
-		}, th.BasicChannel, false)
+		}, th.BasicChannel, false, true)
 		require.Nil(t, err)
 
 		clientPost := th.App.PreparePostForClient(post, false, false)
@@ -430,20 +477,52 @@ func TestPreparePostForClient(t *testing.T) {
 			require.Len(t, imageDimensions, 1)
 			assert.Equal(t, &model.PostImage{
 				Format: "png",
-				Width:  501,
-				Height: 501,
-			}, imageDimensions["https://github.com/hmhealey/test-files/raw/master/icon.png"])
+				Width:  408,
+				Height: 336,
+			}, imageDimensions[server.URL+"/test-image1.png"])
 		})
+	})
+
+	t.Run("no metadata for deleted posts", func(t *testing.T) {
+		th := setup(t)
+		defer th.TearDown()
+
+		fileInfo, err := th.App.DoUploadFile(time.Now(), th.BasicTeam.Id, th.BasicChannel.Id, th.BasicUser.Id, "test.txt", []byte("test"))
+		require.Nil(t, err)
+
+		post, err := th.App.CreatePost(&model.Post{
+			Message:   "test",
+			FileIds:   []string{fileInfo.Id},
+			UserId:    th.BasicUser.Id,
+			ChannelId: th.BasicChannel.Id,
+		}, th.BasicChannel, false, true)
+		require.Nil(t, err)
+
+		th.AddReactionToPost(post, th.BasicUser, "taco")
+
+		post, err = th.App.DeletePost(post.Id, th.BasicUser.Id)
+		require.Nil(t, err)
+
+		// DeleteAt isn't set on the post returned by App.DeletePost
+		post.DeleteAt = model.GetMillis()
+
+		clientPost := th.App.PreparePostForClient(post, false, false)
+
+		assert.NotEqual(t, nil, clientPost.Metadata, "should've populated Metadata“")
+		assert.Equal(t, "", clientPost.Message, "should've cleaned post content")
+		assert.Nil(t, clientPost.Metadata.Reactions, "should not have populated Reactions")
+		assert.Nil(t, clientPost.Metadata.Files, "should not have populated Files")
 	})
 }
 
 func TestPreparePostForClientWithImageProxy(t *testing.T) {
-	setup := func() *TestHelper {
+	setup := func(t *testing.T) *TestHelper {
 		th := Setup(t).InitBasic()
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
 			*cfg.ServiceSettings.EnableLinkPreviews = true
 			*cfg.ServiceSettings.SiteURL = "http://mymattermost.com"
+			*cfg.ServiceSettings.AllowedUntrustedInternalConnections = "localhost,127.0.0.1"
 			*cfg.ImageProxySettings.Enable = true
 			*cfg.ImageProxySettings.ImageProxyType = "atmos/camo"
 			*cfg.ImageProxySettings.RemoteImageProxyURL = "https://127.0.0.1"
@@ -454,14 +533,14 @@ func TestPreparePostForClientWithImageProxy(t *testing.T) {
 	}
 
 	t.Run("proxy linked images", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		testProxyLinkedImage(t, th, true)
 	})
 
 	t.Run("proxy opengraph images", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		testProxyOpenGraphImage(t, th, true)
@@ -490,11 +569,40 @@ func testProxyLinkedImage(t *testing.T, th *TestHelper, shouldProxy bool) {
 }
 
 func testProxyOpenGraphImage(t *testing.T, th *TestHelper, shouldProxy bool) {
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`
+			<html>
+			<head>
+			<meta property="og:image" content="` + serverURL + `/test-image3.png" />
+			<meta property="og:site_name" content="GitHub" />
+			<meta property="og:type" content="object" />
+			<meta property="og:title" content="hmhealey/test-files" />
+			<meta property="og:url" content="https://github.com/hmhealey/test-files" />
+			<meta property="og:description" content="Contribute to hmhealey/test-files development by creating an account on GitHub." />
+			</head>
+			</html>`))
+		case "/test-image3.png":
+			file, err := testutils.ReadTestFile("qa-data-graph.png")
+			require.Nil(t, err)
+
+			w.Header().Set("Content-Type", "image/png")
+			w.Write(file)
+		default:
+			require.Fail(t, "Invalid path", r.URL.Path)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
 	post, err := th.App.CreatePost(&model.Post{
 		UserId:    th.BasicUser.Id,
 		ChannelId: th.BasicChannel.Id,
-		Message:   `This is our web page: https://github.com/hmhealey/test-files`,
-	}, th.BasicChannel, false)
+		Message:   `This is our web page: ` + server.URL,
+	}, th.BasicChannel, false, true)
 	require.Nil(t, err)
 
 	embeds := th.App.PreparePostForClient(post, false, false).Metadata.Embeds
@@ -502,10 +610,11 @@ func testProxyOpenGraphImage(t *testing.T, th *TestHelper, shouldProxy bool) {
 
 	embed := embeds[0]
 	assert.Equal(t, model.POST_EMBED_OPENGRAPH, embed.Type, "embed type should be OpenGraph")
-	assert.Equal(t, "https://github.com/hmhealey/test-files", embed.URL, "embed URL should be correct")
+	assert.Equal(t, server.URL, embed.URL, "embed URL should be correct")
 
 	og, ok := embed.Data.(*opengraph.OpenGraph)
-	assert.Equal(t, true, ok, "data should be non-nil OpenGraph data")
+	assert.True(t, ok, "data should be non-nil OpenGraph data")
+	assert.NotNil(t, og, "data should be non-nil OpenGraph data")
 	assert.Equal(t, "GitHub", og.SiteName, "OpenGraph data should be correctly populated")
 
 	require.Len(t, og.Images, 1, "OpenGraph data should have one image")
@@ -513,9 +622,9 @@ func testProxyOpenGraphImage(t *testing.T, th *TestHelper, shouldProxy bool) {
 	image := og.Images[0]
 	if shouldProxy {
 		assert.Equal(t, "", image.URL, "image URL should not be set with proxy")
-		assert.Equal(t, "http://mymattermost.com/api/v4/image?url=https%3A%2F%2Favatars1.githubusercontent.com%2Fu%2F3277310%3Fs%3D400%26v%3D4", image.SecureURL, "secure image URL should be sent through proxy")
+		assert.Equal(t, "http://mymattermost.com/api/v4/image?url="+url.QueryEscape(server.URL+"/test-image3.png"), image.SecureURL, "secure image URL should be sent through proxy")
 	} else {
-		assert.Equal(t, "https://avatars1.githubusercontent.com/u/3277310?s=400&v=4", image.URL, "image URL should be set")
+		assert.Equal(t, server.URL+"/test-image3.png", image.URL, "image URL should be set")
 		assert.Equal(t, "", image.SecureURL, "secure image URL should not be set")
 	}
 }
@@ -544,7 +653,7 @@ func TestGetEmbedForPost(t *testing.T) {
 			</head>
 			</html>`))
 		} else {
-			t.Fatal("Invalid path", r.URL.Path)
+			require.Fail(t, "Invalid path", r.URL.Path)
 		}
 	}))
 	defer server.Close()
@@ -1382,8 +1491,8 @@ func TestGetImagesInMessageAttachments(t *testing.T) {
 }
 
 func TestGetLinkMetadata(t *testing.T) {
-	setup := func() *TestHelper {
-		th := Setup(t).InitBasic()
+	setup := func(t *testing.T) *TestHelper {
+		th := Setup(t)
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
 			*cfg.ServiceSettings.AllowedUntrustedInternalConnections = "127.0.0.1"
@@ -1454,7 +1563,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	defer server.Close()
 
 	t.Run("in-memory cache", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/cached"
@@ -1527,7 +1636,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("database cache", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL
@@ -1608,7 +1717,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should get data from remote source", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/opengraph?title=Remote&name=" + t.Name()
@@ -1628,7 +1737,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache OpenGraph results", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/opengraph?title=Remote&name=" + t.Name()
@@ -1656,7 +1765,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache image results", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/image?height=300&width=400&name=" + t.Name()
@@ -1684,7 +1793,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache general errors", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/error"
@@ -1714,7 +1823,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache invalid URL errors", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := "http://notarealdomainthatactuallyexists.ca/?name=" + t.Name()
@@ -1744,7 +1853,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache timeout errors", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		th.App.UpdateConfig(func(cfg *model.Config) {
@@ -1765,7 +1874,7 @@ func TestGetLinkMetadata(t *testing.T) {
 		assert.Nil(t, og)
 		assert.Nil(t, img)
 		assert.NotNil(t, err)
-		assert.Contains(t, err.Error(), "Client.Timeout")
+		assert.True(t, os.IsTimeout(err))
 
 		ogFromCache, imgFromCache, ok := getLinkMetadataFromCache(requestURL, timestamp)
 		assert.True(t, ok)
@@ -1779,7 +1888,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should cache database results in memory", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/image?height=300&width=400&name=" + t.Name()
@@ -1807,7 +1916,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should reject non-html, non-image response", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/json?name=" + t.Name()
@@ -1820,7 +1929,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should check in-memory cache for new post", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/error?name=" + t.Name()
@@ -1835,7 +1944,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should skip database cache for new post", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/error?name=" + t.Name()
@@ -1850,7 +1959,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should resolve relative URL", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		// Fake the SiteURL to have the relative URL resolve to the external server
@@ -1873,7 +1982,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should error on local addresses other than the image proxy", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		// Disable AllowedUntrustedInternalConnections since it's turned on for the previous tests
@@ -1912,7 +2021,7 @@ func TestGetLinkMetadata(t *testing.T) {
 	})
 
 	t.Run("should prefer images for mixed content", func(t *testing.T) {
-		th := setup()
+		th := setup(t)
 		defer th.TearDown()
 
 		requestURL := server.URL + "/mixed?name=" + t.Name()
@@ -1967,7 +2076,7 @@ func TestResolveMetadataURL(t *testing.T) {
 }
 
 func TestParseLinkMetadata(t *testing.T) {
-	th := Setup(t).InitBasic()
+	th := Setup(t)
 	defer th.TearDown()
 
 	imageURL := "http://example.com/test.png"

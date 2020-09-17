@@ -46,13 +46,21 @@ services:
     extends:
         file: build/docker-compose.common.yml
         service: elasticsearch
-  redis:
-    container_name: mattermost-redis
+  dejavu:
+    container_name: mattermost-dejavu
     ports:
-      - "6379:6379"
+      - "1358:1358"
     extends:
         file: build/docker-compose.common.yml
-        service: redis
+        service: dejavu
+  keycloak:
+    container_name: mattermost-saml
+    ports:
+      - "8484:8080"
+    extends:
+        file: build/docker-compose.common.yml
+        service: keycloak
+
   start_dependencies:
     image: mattermost/mattermost-wait-for-dep:latest
     networks:
@@ -64,9 +72,13 @@ services:
       - inbucket
       - openldap
       - elasticsearch
-      - redis
-    command: postgres:5432 mysql:3306 minio:9000 inbucket:10080 openldap:389 elasticsearch:9200 redis:6379
+    command: postgres:5432 mysql:3306 minio:9000 inbucket:10080 openldap:389 elasticsearch:9200
 
 networks:
   mm-test:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.254.0/24
+          ip_range: 192.168.254.0/24
