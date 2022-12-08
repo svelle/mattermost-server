@@ -80,7 +80,7 @@ type SupportPacket struct {
 	ServerVersion         string   `yaml:"server_version"`
 	BuildHash             string   `yaml:"build_hash,omitempty"`
 	DatabaseType          string   `yaml:"database_type"`
-	DatabaseVersion       string   `yaml:"database_version"`
+	DatabaseVersion       string   `yaml:"database_schema_version"`
 	LdapVendorName        string   `yaml:"ldap_vendor_name,omitempty"`
 	LdapVendorVersion     string   `yaml:"ldap_vendor_version,omitempty"`
 	ElasticServerVersion  string   `yaml:"elastic_server_version,omitempty"`
