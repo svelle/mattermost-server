@@ -117,14 +117,26 @@ const getThemePreference = createSelector(
     'getThemePreference',
     getMyPreferences,
     (state) => state.entities.teams.currentTeamId,
-    (myPreferences, currentTeamId) => {
-        // Prefer the user's current team-specific theme over the user's current global theme
-        let themePreference;
+    (state) => state.entities.teams.teams,
+    (myPreferences, currentTeamId, teams) => {
+        // First check if team has a mandatory theme
+        if (currentTeamId && teams[currentTeamId] && teams[currentTeamId].settings?.theme) {
+            // Return a "fake" preference that contains the team's theme
+            return {
+                category: Preferences.CATEGORY_THEME,
+                name: currentTeamId,
+                user_id: '',
+                value: teams[currentTeamId].settings.theme,
+            };
+        }
 
+        // Then try team-specific user theme
+        let themePreference;
         if (currentTeamId) {
             themePreference = myPreferences[getPreferenceKey(Preferences.CATEGORY_THEME, currentTeamId)];
         }
 
+        // Fallback to global theme
         if (!themePreference) {
             themePreference = myPreferences[getPreferenceKey(Preferences.CATEGORY_THEME, '')];
         }
@@ -190,9 +202,13 @@ export const getTheme: (state: GlobalState) => Theme = createShallowSelector(
 
         // A custom theme will be a JSON-serialized object stored in a preference
         // At this point, the theme should be a plain object
-        const theme: Theme = typeof themeValue === 'string' ? JSON.parse(themeValue) : themeValue;
-
-        return setThemeDefaults(theme);
+        try {
+            const theme: Theme = typeof themeValue === 'string' ? JSON.parse(themeValue) : themeValue;
+            return setThemeDefaults(theme);
+        } catch (e) {
+            console.error('Error parsing theme:', e);
+            return setThemeDefaults(defaultTheme);
+        }
     },
 );
 

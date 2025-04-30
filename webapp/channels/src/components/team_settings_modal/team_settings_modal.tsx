@@ -60,6 +60,7 @@ const TeamSettingsModal = ({onExited, canInviteUsers, focusOriginElement}: Props
     if (canInviteUsers) {
         tabs.push({name: 'access', uiName: formatMessage({id: 'team_settings_modal.accessTab', defaultMessage: 'Access'}), icon: 'icon icon-account-multiple-outline', iconTitle: formatMessage({id: 'generic_icons.member', defaultMessage: 'Member Icon'})});
     }
+    tabs.push({name: 'theme', uiName: formatMessage({id: 'team_settings_modal.themeTab', defaultMessage: 'Theme'}), icon: 'icon icon-brush-outline', iconTitle: formatMessage({id: 'generic_icons.brush', defaultMessage: 'Brush Icon'})});
 
     return (
         <Modal

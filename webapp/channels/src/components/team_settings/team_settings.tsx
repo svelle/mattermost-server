@@ -7,6 +7,7 @@ import type {Team} from '@mattermost/types/teams';
 
 import AccessTab from './team_access_tab';
 import InfoTab from './team_info_tab';
+import ThemeTab from './team_theme_tab';
 
 type Props = {
     activeTab: string;
@@ -51,6 +52,19 @@ const TeamSettings = ({
     case 'access':
         result = (
             <AccessTab
+                team={team}
+                hasChanges={hasChanges}
+                setHasChanges={setHasChanges}
+                hasChangeTabError={hasChangeTabError}
+                setHasChangeTabError={setHasChangeTabError}
+                closeModal={closeModal}
+                collapseModal={collapseModal}
+            />
+        );
+        break;
+    case 'theme':
+        result = (
+            <ThemeTab
                 team={team}
                 hasChanges={hasChanges}
                 setHasChanges={setHasChanges}

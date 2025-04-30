@@ -5,6 +5,7 @@ import React from 'react';
 import type {RefObject} from 'react';
 import {FormattedMessage} from 'react-intl';
 
+import type {Team} from '@mattermost/types/teams';
 import type {Theme} from 'mattermost-redux/selectors/entities/preferences';
 
 import ExternalLink from 'components/external_link';
@@ -20,6 +21,8 @@ import type {ModalData} from 'types/actions';
 import CustomThemeChooser from './custom_theme_chooser/custom_theme_chooser';
 import PremadeThemeChooser from './premade_theme_chooser';
 
+import './user_settings_theme.scss';
+
 type Props = {
     currentTeamId: string;
     theme: Theme;
@@ -30,6 +33,7 @@ type Props = {
     allowCustomThemes: boolean;
     showAllTeamsCheckbox: boolean;
     applyToAllTeams: boolean;
+    teams?: Record<string, Team>;
     actions: {
         saveTheme: (teamId: string, theme: Theme) => void;
         deleteTeamSpecificThemes: () => void;
@@ -178,8 +182,40 @@ export default class ThemeSetting extends React.PureComponent<Props, State> {
             );
         }
 
+        // Check if current team has a mandatory theme set
+        const currentTeam = this.props.currentTeamId ? 
+            this.props.teams?.[this.props.currentTeamId] : null;
+        const hasTeamTheme = currentTeam && Boolean(currentTeam.theme);
+        
         let themeUI;
         if (this.props.selected) {
+            if (hasTeamTheme) {
+                themeUI = (
+                    <SettingItemMax
+                        title={
+                            <FormattedMessage
+                                id='user.settings.display.theme.title'
+                                defaultMessage='Theme'
+                            />
+                        }
+                        inputs={
+                            <div className='alert alert-info'>
+                                <FormattedMessage
+                                    id='user.settings.display.theme.teamThemeApplied'
+                                    defaultMessage='Your team admin has set a mandatory theme for this team. You cannot change your theme while on this team.'
+                                />
+                            </div>
+                        }
+                        disableEnterSubmit={true}
+                        saving={this.state.isSaving}
+                        serverError={serverError}
+                        isFullWidth={true}
+                        updateSection={this.handleUpdateSection}
+                    />
+                );
+                return themeUI;
+            }
+            
             const inputs = [];
 
             if (this.props.allowCustomThemes) {
@@ -269,7 +305,7 @@ export default class ThemeSetting extends React.PureComponent<Props, State> {
                         />
                     }
                     inputs={
-                        <fieldset>
+                        <fieldset className='user-settings-theme-content'>
                             <legend className='hidden-label'>
                                 <FormattedMessage
                                     id='user.settings.display.theme.title'
@@ -291,6 +327,23 @@ export default class ThemeSetting extends React.PureComponent<Props, State> {
                 />
             );
         } else {
+            // Check if current team has a mandatory theme set
+            const currentTeam = this.props.currentTeamId ? 
+                this.props.teams?.[this.props.currentTeamId] : null;
+            const hasTeamTheme = currentTeam && Boolean(currentTeam.settings?.theme);
+            
+            const describeMessage = hasTeamTheme ? (
+                <FormattedMessage
+                    id='user.settings.display.theme.describe.team_enforced'
+                    defaultMessage='Your team admin has set a mandatory theme for this team'
+                />
+            ) : (
+                <FormattedMessage
+                    id='user.settings.display.theme.describe'
+                    defaultMessage='Open to manage your theme'
+                />
+            );
+            
             themeUI = (
                 <SettingItemMin
                     title={
@@ -299,15 +352,11 @@ export default class ThemeSetting extends React.PureComponent<Props, State> {
                             defaultMessage='Theme'
                         />
                     }
-                    describe={
-                        <FormattedMessage
-                            id='user.settings.display.theme.describe'
-                            defaultMessage='Open to manage your theme'
-                        />
-                    }
+                    describe={describeMessage}
                     section={'theme'}
                     updateSection={this.handleUpdateSection}
                     ref={this.minRef}
+                    isDisabled={hasTeamTheme}
                 />
             );
         }

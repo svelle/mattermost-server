@@ -7,7 +7,7 @@ import type {Dispatch} from 'redux';
 
 import {saveTheme, deleteTeamSpecificThemes} from 'mattermost-redux/actions/preferences';
 import {getTheme, getThemePreferences} from 'mattermost-redux/selectors/entities/preferences';
-import {getCurrentTeamId, getMyTeamsCount} from 'mattermost-redux/selectors/entities/teams';
+import {getCurrentTeamId, getMyTeamsCount, getTeams} from 'mattermost-redux/selectors/entities/teams';
 
 import {openModal} from 'actions/views/modals';
 
@@ -21,6 +21,7 @@ function mapStateToProps(state: GlobalState) {
         theme: getTheme(state),
         applyToAllTeams: getThemePreferences(state).length <= 1,
         showAllTeamsCheckbox: getMyTeamsCount(state) > 1,
+        teams: getTeams(state),
     };
 }
 
